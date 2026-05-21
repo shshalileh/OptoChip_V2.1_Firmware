@@ -28,19 +28,15 @@ void NFC_ST_Init(uint8_t allow_format)
 {
     while (NFC_TAG_Init(NFC_TAG_INSTANCE) != NFCTAG_OK) {}
 
-    (void)CUSTOM_GPO_Init();
-    (void)NFC_TAG_PresentPwd(NFC_TAG_INSTANCE, nfc_i2c_password);
-    (void)NFC_TAG_ConfigIT(NFC_TAG_INSTANCE,
-                           ST25DVXXKC_GPO1_ENABLE_MASK |
-                           ST25DVXXKC_GPO1_FIELDCHANGE_MASK);
-    (void)NFC_TAG_ResetMBEN_Dyn(NFC_TAG_INSTANCE);
-
     NfcTag_SelectProtocol(NFCTAG_TYPE5);
 
     if (!allow_format)
     {
+        (void)CUSTOM_GPO_Init();
         return;
     }
+
+    (void)NFC_TAG_ResetMBEN_Dyn(NFC_TAG_INSTANCE);
 
     if (NfcType5_NDEFDetection() != NDEF_OK)
     {
@@ -52,6 +48,12 @@ void NFC_ST_Init(uint8_t allow_format)
         while (NfcType5_TT5Init() != NFCTAG_OK) {}
         HAL_Delay(5U);
     }
+
+    (void)NFC_TAG_PresentPwd(NFC_TAG_INSTANCE, nfc_i2c_password);
+    (void)NFC_TAG_ConfigIT(NFC_TAG_INSTANCE,
+                           ST25DVXXKC_GPO1_ENABLE_MASK |
+                           ST25DVXXKC_GPO1_RFWRITE_MASK);
+    (void)CUSTOM_GPO_Init();
 }
 
 void NFC_ST_Process(void)
@@ -66,11 +68,7 @@ void NFC_ST_Process(void)
     rf_processing = 1U;
     nfc_gpo_flag = 0U;
 
-    if (CUSTOM_NFCTAG_IsDeviceReady(CUSTOM_NFCTAG_INSTANCE, 1U) != NFCTAG_OK)
-    {
-        rf_processing = 0U;
-        return;
-    }
+    while (CUSTOM_NFCTAG_IsDeviceReady(CUSTOM_NFCTAG_INSTANCE, 1U) != NFCTAG_OK) {}
 
     if (CUSTOM_NFCTAG_ReadITSTStatus_Dyn(CUSTOM_NFCTAG_INSTANCE, &it_status) != NFCTAG_OK)
     {
@@ -84,11 +82,7 @@ void NFC_ST_Process(void)
 
         while (1)
         {
-            if (CUSTOM_NFCTAG_IsDeviceReady(CUSTOM_NFCTAG_INSTANCE, 1U) != NFCTAG_OK)
-            {
-                rf_processing = 0U;
-                return;
-            }
+            while (CUSTOM_NFCTAG_IsDeviceReady(CUSTOM_NFCTAG_INSTANCE, 1U) != NFCTAG_OK) {}
 
             if (NFC_TAG_ReadITST(NFC_TAG_INSTANCE, &it_status) != NFCTAG_OK)
             {
