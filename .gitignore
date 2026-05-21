@@ -1,0 +1,37 @@
+# STM32CubeIDE generated workspace state
+.cubeide_ws/
+.metadata/
+.settings/language.settings.xml
+
+# Build outputs
+Debug/
+Release/
+build/
+cmake-build-*/
+
+# Compiled artifacts
+*.o
+*.obj
+*.d
+*.su
+*.cyclo
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.axf
+*.out
+
+# Local editor and OS files
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+
+# Local debug/session noise
+*.launch.local
+*.log
