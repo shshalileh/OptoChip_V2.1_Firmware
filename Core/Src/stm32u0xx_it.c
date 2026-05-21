@@ -147,9 +147,9 @@ void SysTick_Handler(void)
 void RTC_TAMP_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_TAMP_IRQn 0 */
+  HAL_RTC_AlarmIRQHandler(&hrtc);
 
   /* USER CODE END RTC_TAMP_IRQn 0 */
-  HAL_RTCEx_WakeUpTimerIRQHandler(&hrtc);
   /* USER CODE BEGIN RTC_TAMP_IRQn 1 */
 
   /* USER CODE END RTC_TAMP_IRQn 1 */

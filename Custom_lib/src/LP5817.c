@@ -1,5 +1,5 @@
 #include "LP5817.h"
-// #include "StimScheduler.h"
+#include "StimScheduler.h"
 
 // external variables
 extern LPTIM_HandleTypeDef hlptim1;
@@ -103,11 +103,6 @@ HAL_StatusTypeDef LP5817_SetChannelCurrent_AndPWM(
             pwm_reg = LP5817_REG_OUT1_MANUAL_PWM;
             break;
 
-        case 2:
-            dc_reg  = LP5817_REG_OUT2_DC;
-            pwm_reg = LP5817_REG_OUT2_MANUAL_PWM;
-            break;
-
         default:
             return HAL_ERROR;
     }
@@ -138,10 +133,6 @@ HAL_StatusTypeDef LP5817_SetChannelCurrent(I2C_HandleTypeDef *hi2c, const uint8_
 
         case 1:
             dc_reg  = LP5817_REG_OUT1_DC;
-            break;
-
-        case 2:
-            dc_reg  = LP5817_REG_OUT2_DC;
             break;
 
         default:
@@ -204,10 +195,6 @@ HAL_StatusTypeDef LP5817_SetChannel_PWM(I2C_HandleTypeDef *hi2c, uint8_t channel
             pwm_reg = LP5817_REG_OUT1_MANUAL_PWM;
             break;
 
-        case 2:
-            pwm_reg = LP5817_REG_OUT2_MANUAL_PWM;
-            break;
-
         default:
             return HAL_ERROR;
     }
@@ -242,7 +229,7 @@ HAL_StatusTypeDef LP5817_Init_2CH_20mA(I2C_HandleTypeDef *hi2c)
                 LP5817_MAX_CURRENT_BIT);
     if (status != HAL_OK) return status;
 
-    /* Enable OUT0, OUT1 and OUT2 for independent stimulation channels */
+    /* Enable OUT0 and OUT1 for independent stimulation channels. */
     status = LP5817_UpdateBits(
                 hi2c,
                 LP5817_REG_DEV_CONFIG1,
@@ -250,8 +237,7 @@ HAL_StatusTypeDef LP5817_Init_2CH_20mA(I2C_HandleTypeDef *hi2c)
                 LP5817_OUT1_EN_BIT |
                 LP5817_OUT2_EN_BIT,
                 LP5817_OUT0_EN_BIT |
-                LP5817_OUT1_EN_BIT |
-                LP5817_OUT2_EN_BIT);
+                LP5817_OUT1_EN_BIT);
     if (status != HAL_OK) return status;
 
     /* Disable fade */
@@ -278,7 +264,7 @@ HAL_StatusTypeDef LP5817_Init_2CH_20mA(I2C_HandleTypeDef *hi2c)
                              LP5817_CMD_UPDATE);
     if (status != HAL_OK) return status;
 
-    /* OUT0 → 20mA ON */
+    /* OUT0 -> 20mA OFF */
     status = LP5817_SetChannelCurrent_AndPWM(
                 hi2c,
                 0,
@@ -286,7 +272,7 @@ HAL_StatusTypeDef LP5817_Init_2CH_20mA(I2C_HandleTypeDef *hi2c)
                 LP5817_PWM_0);
     if (status != HAL_OK) return status;
 
-    /* OUT1 → 20mA OFF */
+    /* OUT1 -> 20mA OFF */
     status = LP5817_SetChannelCurrent_AndPWM(
                 hi2c,
                 1,
@@ -295,11 +281,10 @@ HAL_StatusTypeDef LP5817_Init_2CH_20mA(I2C_HandleTypeDef *hi2c)
     if (status != HAL_OK) return status;
 
     /* Ensure OUT2 disabled */
-    status = LP5817_SetChannelCurrent_AndPWM(
-                hi2c,
-                2,
-                0x00,
-                0x00);
+    status = LP5817_WriteReg(hi2c, LP5817_REG_OUT2_DC, 0x00);
+    if (status != HAL_OK) return status;
+
+    status = LP5817_WriteReg(hi2c, LP5817_REG_OUT2_MANUAL_PWM, 0x00);
     if (status != HAL_OK) return status;
 
     return HAL_OK;
@@ -310,16 +295,11 @@ HAL_StatusTypeDef LP5817_DumpRegisters(
 {
     HAL_StatusTypeDef status;
     uint8_t val;
-    // char buf[40];
-
     for (uint8_t reg = 0x00; reg <= 0x40; reg++)
     {
         status = LP5817_ReadReg(hi2c, reg, &val);
         if (status != HAL_OK)
             return status;
-
-        // int len = sprintf(buf, "LP5817 Reg[0x%02X] = 0x%02X\r\n", reg, val);
-
     }
 
     return HAL_OK;
@@ -365,7 +345,7 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
     if (hlptim->Instance != LPTIM1)
         return;
 
-    // StimScheduler_Tick1ms();
+    StimScheduler_Tick1ms();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -396,7 +376,6 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 //
 //        custom_delay(off_time_ms);
 //    }
-//    //Debug_UART_Send(&huart2, "\r\nLED pulsing finished\r\n");
 //    return HAL_OK;
 //}
 //
@@ -431,4 +410,3 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 //        }
 //    }
 //}
-

@@ -24,6 +24,8 @@
 #include "BQ25155.h"
 #include "LP5817.h"
 #include "My_ST25DV04.h"
+#include "RTC_ST.h"
+#include "StimScheduler.h"
 
 /* USER CODE END Includes */
 
@@ -34,6 +36,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define APP_WAKE_SETTLE_DELAY_MS       5U
+#define APP_STOP2_GPO_LOW_TIMEOUT_MS   1500U
 
 /* USER CODE END PD */
 
@@ -53,6 +57,8 @@ volatile uint8_t nfc_gpo_flag = 0U;
 volatile uint8_t rf_processing = 0U;
 volatile HAL_StatusTypeDef bq25155_init_status = HAL_ERROR;
 volatile HAL_StatusTypeDef lp5817_init_status = HAL_ERROR;
+volatile uint32_t app_stop2_entry_count = 0U;
+volatile uint32_t app_stop2_wake_count = 0U;
 
 extern I2C_HandleTypeDef hi2c3;
 extern BQ25155_Handle_t BQ;
@@ -65,6 +71,8 @@ static void MX_GPIO_Init(void);
 static void MX_LPTIM1_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
+static void APP_PowerDevicesOn(uint8_t allow_nfc_format);
+static void APP_EnterStop2(void);
 
 /* USER CODE END PFP */
 
@@ -104,12 +112,13 @@ int main(void)
   MX_GPIO_Init();
   MX_LPTIM1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_GPIO_WritePin(NFC_VCC_GPIO_Port, NFC_VCC_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(BQ_LP_GPIO_Port, BQ_LP_Pin, GPIO_PIN_SET);
+  MX_RTC_Init();
+  (void)RTC_ST_Setup(&hrtc);
 
-  NFC_ST_Init(1U);
-  bq25155_init_status = BQ25155_InitAll(&BQ);
-  lp5817_init_status = LP5817_Init_2CH_20mA(&hi2c3);
+  APP_PowerDevicesOn(1U);
+  (void)StimScheduler_Init(&hrtc, &hi2c3);
+  (void)StimScheduler_RunDueSessions();
+  (void)StimScheduler_ArmNextAlarm();
 
   /* USER CODE END 2 */
 
@@ -118,6 +127,14 @@ int main(void)
   while (1)
   {
     NFC_ST_Process();
+    StimScheduler_Service();
+
+    if (!StimScheduler_IsAnyLedActive() && !nfc_gpo_flag && !rf_processing)
+    {
+      (void)StimScheduler_RunDueSessions();
+      (void)StimScheduler_ArmNextAlarm();
+      APP_EnterStop2();
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -217,9 +234,6 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END RTC_Init 0 */
 
-  RTC_TimeTypeDef sTime = {0};
-  RTC_DateTypeDef sDate = {0};
-
   /* USER CODE BEGIN RTC_Init 1 */
 
   /* USER CODE END RTC_Init 1 */
@@ -245,33 +259,6 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END Check_RTC_BKUP */
 
-  /** Initialize RTC and set the Time and Date
-  */
-  sTime.Hours = 0x11;
-  sTime.Minutes = 0x0;
-  sTime.Seconds = 0x0;
-  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-  sDate.Month = RTC_MONTH_MAY;
-  sDate.Date = 0x18;
-  sDate.Year = 0x26;
-
-  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Enable the WakeUp
-  */
-  if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 0, RTC_WAKEUPCLOCK_CK_SPRE_16BITS, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN RTC_Init 2 */
 
   /* USER CODE END RTC_Init 2 */
@@ -331,6 +318,52 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void APP_PowerDevicesOn(uint8_t allow_nfc_format)
+{
+  HAL_GPIO_WritePin(NFC_VCC_GPIO_Port, NFC_VCC_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(BQ_LP_GPIO_Port, BQ_LP_Pin, GPIO_PIN_SET);
+  HAL_Delay(APP_WAKE_SETTLE_DELAY_MS);
+
+  NFC_ST_Init(allow_nfc_format);
+  bq25155_init_status = BQ25155_InitAll(&BQ);
+  lp5817_init_status = LP5817_Init_2CH_20mA(&hi2c3);
+}
+
+static void APP_EnterStop2(void)
+{
+  uint32_t wait_start;
+
+  if (nfc_gpo_flag || rf_processing || StimScheduler_IsAnyLedActive())
+  {
+    return;
+  }
+
+  wait_start = HAL_GetTick();
+  while ((HAL_GPIO_ReadPin(NFC_GPO_GPIO_Port, NFC_GPO_Pin) == GPIO_PIN_SET) &&
+         ((HAL_GetTick() - wait_start) < APP_STOP2_GPO_LOW_TIMEOUT_MS))
+  {
+    HAL_Delay(1U);
+  }
+
+  if (HAL_GPIO_ReadPin(NFC_GPO_GPIO_Port, NFC_GPO_Pin) == GPIO_PIN_SET)
+  {
+    return;
+  }
+
+  __HAL_GPIO_EXTI_CLEAR_IT(NFC_GPO_Pin);
+  HAL_GPIO_WritePin(BQ_LP_GPIO_Port, BQ_LP_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(NFC_VCC_GPIO_Port, NFC_VCC_Pin, GPIO_PIN_RESET);
+
+  app_stop2_entry_count++;
+  HAL_SuspendTick();
+  HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+  HAL_ResumeTick();
+  SystemClock_Config();
+  app_stop2_wake_count++;
+
+  APP_PowerDevicesOn(0U);
+}
+
 void BSP_GPO_Callback(void)
 {
   if (!rf_processing)
