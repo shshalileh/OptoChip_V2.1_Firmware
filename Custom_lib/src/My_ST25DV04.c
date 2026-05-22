@@ -4,7 +4,6 @@
 #include "LP5817.h"
 #include "RTC_ST.h"
 #include "StimScheduler.h"
-#include "lib_NDEF_config.h"
 #include "nfc_cmd_proto.h"
 
 #include <string.h>
@@ -15,7 +14,6 @@
 #define NFC_ST_RFWRITE_DONE_TIMEOUT_MS   5000U
 #define NFC_ST_RFWRITE_SETTLE_DELAY_MS   100U
 #define NFC_ST_RFWRITE_POLL_DELAY_MS     25U
-#define NFC_ST_REPAIR_TEXT               "ERR01"
 
 extern volatile uint8_t nfc_gpo_flag;
 extern volatile uint8_t rf_processing;
@@ -46,11 +44,11 @@ static uint16_t NFC_ST_WaitInit(uint32_t timeout_ms);
 static uint16_t NFC_ST_WaitFormat(uint32_t timeout_ms);
 static uint16_t NFC_ST_ReadItStatus(uint8_t *it_status);
 static uint16_t NFC_ST_WaitRfWriteDone(uint8_t *last_it_status);
+static void NFC_ST_LoadDefaultCcFile(void);
+static uint16_t NFC_ST_FormatEmptyNdef(uint8_t count_repair);
+static uint16_t NFC_ST_CheckNdefHealthy(void);
 static uint16_t NFC_ST_ValidateFirstRecord(const uint8_t *ndef, uint16_t ndef_size);
 static uint16_t NFC_ST_ReadTextValidated(char *text, size_t text_size);
-static uint16_t NFC_ST_RepairNdefText(void);
-static uint16_t NFC_ST_WriteRepairTextDirect(const char *text);
-static uint8_t NFC_ST_IsCcFileValid(uint32_t *ndef_offset, uint32_t *memory_size);
 
 uint16_t NFC_ST_Init(uint8_t allow_format)
 {
@@ -77,12 +75,7 @@ uint16_t NFC_ST_Init(uint8_t allow_format)
     status = NfcType5_NDEFDetection();
     if (status != NDEF_OK)
     {
-        CCFileStruct.MagicNumber = NFCT5_MAGICNUMBER_E1_CCFILE;
-        CCFileStruct.Version = NFCT5_VERSION_V1_0;
-        CCFileStruct.MemorySize = (ST25DVXXKC_MAX_SIZE / 8) & 0xFF;
-        CCFileStruct.TT5Tag = 0x05;
-
-        status = NFC_ST_WaitFormat(NFC_ST_FORMAT_TIMEOUT_MS);
+        status = NFC_ST_FormatEmptyNdef(0U);
         if (status != NDEF_OK)
         {
             nfc_st_last_init_status = status;
@@ -124,19 +117,24 @@ void NFC_ST_Process(void)
         nfc_st_rfwrite_count++;
         if (NFC_ST_WaitRfWriteDone(&it_status) == NDEF_OK)
         {
+            uint16_t health_status;
             uint16_t read_status;
 
-            read_status = NFC_ST_ReadTextValidated(nfc_last_text, sizeof(nfc_last_text));
-            nfc_st_last_ndef_status = read_status;
-            if (read_status == NDEF_OK)
-            {
-                NFC_ST_ProcessCommandText(nfc_last_text);
-            }
-            else if ((read_status == NDEF_ERROR_NOT_FORMATED) ||
-                     (read_status == NDEF_ERROR_MEMORY_INTERNAL))
+            health_status = NFC_ST_CheckNdefHealthy();
+            nfc_st_last_ndef_status = health_status;
+            if (health_status != NDEF_OK)
             {
                 nfc_st_malformed_count++;
-                (void)NFC_ST_RepairNdefText();
+                (void)NFC_ST_FormatEmptyNdef(1U);
+            }
+            else
+            {
+                read_status = NFC_ST_ReadTextValidated(nfc_last_text, sizeof(nfc_last_text));
+                nfc_st_last_ndef_status = read_status;
+                if (read_status == NDEF_OK)
+                {
+                    NFC_ST_ProcessCommandText(nfc_last_text);
+                }
             }
         }
     }
@@ -277,6 +275,75 @@ static uint16_t NFC_ST_WaitRfWriteDone(uint8_t *last_it_status)
     return NDEF_ERROR;
 }
 
+static void NFC_ST_LoadDefaultCcFile(void)
+{
+    CCFileStruct.MagicNumber = NFCT5_MAGICNUMBER_E1_CCFILE;
+    CCFileStruct.Version = NFCT5_VERSION_V1_0;
+    CCFileStruct.MemorySize = (ST25DVXXKC_MAX_SIZE / 8) & 0xFF;
+    CCFileStruct.TT5Tag = 0x05;
+}
+
+static uint16_t NFC_ST_FormatEmptyNdef(uint8_t count_repair)
+{
+    uint16_t status;
+
+    if (NFC_ST_WaitReady(NFC_ST_READY_TIMEOUT_MS) != NDEF_OK)
+    {
+        nfc_st_last_ndef_status = NDEF_ERROR;
+        return NDEF_ERROR;
+    }
+
+    NFC_ST_LoadDefaultCcFile();
+    status = NFC_ST_WaitFormat(NFC_ST_FORMAT_TIMEOUT_MS);
+    nfc_st_last_ndef_status = status;
+    if (status == NDEF_OK)
+    {
+        if (count_repair)
+        {
+            nfc_st_repair_count++;
+        }
+        HAL_Delay(5U);
+    }
+
+    return status;
+}
+
+static uint16_t NFC_ST_CheckNdefHealthy(void)
+{
+    uint16_t status;
+    uint16_t ndef_size = 0U;
+
+    status = NfcType5_NDEFDetection();
+    if (status != NDEF_OK)
+    {
+        return status;
+    }
+
+    status = NfcTag_GetLength(&ndef_size);
+    if (status != NDEF_OK)
+    {
+        return status;
+    }
+
+    if (ndef_size == 0U)
+    {
+        return NDEF_OK;
+    }
+
+    if (ndef_size > NDEF_MAX_SIZE)
+    {
+        return NDEF_ERROR_MEMORY_INTERNAL;
+    }
+
+    status = NfcTag_ReadNDEF(NDEF_Buffer);
+    if (status != NDEF_OK)
+    {
+        return status;
+    }
+
+    return NFC_ST_ValidateFirstRecord(NDEF_Buffer, ndef_size);
+}
+
 static uint16_t NFC_ST_ValidateFirstRecord(const uint8_t *ndef, uint16_t ndef_size)
 {
     uint32_t payload_len;
@@ -398,121 +465,6 @@ static uint16_t NFC_ST_ReadTextValidated(char *text, size_t text_size)
 
     nfc_st_last_ndef_status = NDEF_OK;
     return NDEF_OK;
-}
-
-static uint16_t NFC_ST_RepairNdefText(void)
-{
-    uint16_t status;
-
-    status = NFC_ST_WriteRepairTextDirect(NFC_ST_REPAIR_TEXT);
-    nfc_st_last_ndef_status = status;
-    if (status == NDEF_OK)
-    {
-        nfc_st_repair_count++;
-    }
-
-    return status;
-}
-
-static uint16_t NFC_ST_WriteRepairTextDirect(const char *text)
-{
-    uint8_t repair_buffer[NDEF_TEXT_MAX_LENGTH + 8U];
-    uint32_t ndef_offset = 0U;
-    uint32_t memory_size = 0U;
-    uint32_t offset = 0U;
-    size_t text_len;
-    uint8_t ndef_len;
-    uint8_t terminator = NFCT5_TERMINATOR_TLV;
-
-    if ((text == NULL) ||
-        (NFC_ST_IsCcFileValid(&ndef_offset, &memory_size) == 0U) ||
-        (NFC_ST_WaitReady(NFC_ST_READY_TIMEOUT_MS) != NDEF_OK))
-    {
-        return NDEF_ERROR_NOT_FORMATED;
-    }
-
-    text_len = strlen(text);
-    if (text_len > (NDEF_TEXT_MAX_LENGTH - 1U))
-    {
-        return NDEF_ERROR_MEMORY_INTERNAL;
-    }
-
-    ndef_len = (uint8_t)(3U + text_len + 4U);
-    if ((ndef_offset + 2U + ndef_len + 1U) > memory_size)
-    {
-        return NDEF_ERROR_MEMORY_TAG;
-    }
-
-    repair_buffer[offset++] = NFCT5_NDEF_MSG_TLV;
-    repair_buffer[offset++] = ndef_len;
-    repair_buffer[offset++] = 0xD1U;
-    repair_buffer[offset++] = TEXT_TYPE_STRING_LENGTH;
-    repair_buffer[offset++] = (uint8_t)(3U + text_len);
-    repair_buffer[offset++] = TEXT_TYPE_STRING[0];
-    repair_buffer[offset++] = ISO_ENGLISH_CODE_STRING_LENGTH;
-    repair_buffer[offset++] = ISO_ENGLISH_CODE_STRING[0];
-    repair_buffer[offset++] = ISO_ENGLISH_CODE_STRING[1];
-    memcpy(&repair_buffer[offset], text, text_len);
-    offset += (uint32_t)text_len;
-
-    if (NDEF_Wrapper_WriteData(repair_buffer, ndef_offset, offset) != NDEF_OK)
-    {
-        return NDEF_ERROR;
-    }
-
-    if (NDEF_Wrapper_WriteData(&terminator, ndef_offset + offset, sizeof(terminator)) != NDEF_OK)
-    {
-        return NDEF_ERROR;
-    }
-
-    return NDEF_OK;
-}
-
-static uint8_t NFC_ST_IsCcFileValid(uint32_t *ndef_offset, uint32_t *memory_size)
-{
-    uint8_t cc_file[8] = {0U};
-
-    if (NfcType5_ReadCCFile(cc_file) != NDEF_OK)
-    {
-        return 0U;
-    }
-
-    if ((cc_file[0] != NFCT5_MAGICNUMBER_E1_CCFILE) &&
-        (cc_file[0] != NFCT5_MAGICNUMBER_E2_CCFILE))
-    {
-        return 0U;
-    }
-
-    if (((cc_file[1] & 0xFCU) != 0x40U) &&
-        ((cc_file[1] & 0xFCU) != 0x10U))
-    {
-        return 0U;
-    }
-
-    if (cc_file[2] == NFCT5_EXTENDED_CCFILE)
-    {
-        if (ndef_offset != NULL)
-        {
-            *ndef_offset = ccFileOffset + 8U;
-        }
-        if (memory_size != NULL)
-        {
-            *memory_size = (uint32_t)(((uint16_t)cc_file[6] << 8) | cc_file[7]) * 8U;
-        }
-    }
-    else
-    {
-        if (ndef_offset != NULL)
-        {
-            *ndef_offset = ccFileOffset + 4U;
-        }
-        if (memory_size != NULL)
-        {
-            *memory_size = (uint32_t)cc_file[2] * 8U;
-        }
-    }
-
-    return 1U;
 }
 
 static void NFC_ST_ProcessCommandText(const char *text)
