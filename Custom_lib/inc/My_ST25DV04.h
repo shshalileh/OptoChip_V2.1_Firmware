@@ -23,7 +23,16 @@ extern "C" {
 #define NFC_TAG_ConfigIT      CUSTOM_NFCTAG_ConfigIT
 #define NFC_TAG_ReadITST      CUSTOM_NFCTAG_ReadITSTStatus_Dyn
 
-void NFC_ST_Init(uint8_t allow_format);
+extern volatile uint16_t nfc_st_last_init_status;
+extern volatile uint16_t nfc_st_last_ndef_status;
+extern volatile uint8_t nfc_st_last_it_status;
+extern volatile uint32_t nfc_st_rfwrite_count;
+extern volatile uint32_t nfc_st_malformed_count;
+extern volatile uint32_t nfc_st_repair_count;
+extern volatile uint32_t nfc_st_wait_timeout_count;
+extern volatile uint32_t nfc_st_ready_timeout_count;
+
+uint16_t NFC_ST_Init(uint8_t allow_format);
 void NFC_ST_Process(void);
 uint16_t NFC_ST_ReadText(char *text, size_t text_size);
 uint16_t NFC_ST_WriteText(const char *text);
