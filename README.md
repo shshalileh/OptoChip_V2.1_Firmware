@@ -50,10 +50,14 @@ The project was developed as a CubeIDE firmware tree. If retargeting to another 
 ## NFC Command Protocol
 
 Commands are sent as hex text in an NDEF text record and responses are written back as hex text. See [COMMAND_PROTOCOL.md](COMMAND_PROTOCOL.md) for command IDs, payloads, limits, examples, and response formats.
-
-## Extra notes
+  
+## Extra notes  
 
 - The current hardware configuration supports LED IDs `00` and `01`.
 - Scheduler slots are `00` through `07`.
 - Timing fields in NFC commands use the same BCD month/day/hour/minute/second style used by the firmware RTC helper.
 - This firmware is intended for research and embedded development use. Validate electrical limits, optical output, and power behavior on the target hardware before use.
+
+## License
+
+This project is licensed under the Apache License 2.0. See the LICENSE file for details.
