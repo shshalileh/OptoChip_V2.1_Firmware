@@ -1,0 +1,6 @@
+# Keep GitHub language statistics focused on the custom firmware.
+Drivers/** linguist-vendored
+Middlewares/** linguist-vendored
+NFC7/** linguist-generated
+Core/Startup/** linguist-generated
+STM32U031K8UX_FLASH.ld linguist-generated
