@@ -5,6 +5,7 @@
 #include "RTC_ST.h"
 #include "StimScheduler.h"
 #include "nfc_cmd_proto.h"
+#include "ota_shared.h"
 
 #include <string.h>
 
@@ -473,6 +474,7 @@ static void NFC_ST_ProcessCommandText(const char *text)
     NFC_ResponseFrame_t rsp;
     NFC_ProtoStatus_t proto_st;
     uint8_t rsp_text[NFC_PROTO_MAX_TEXT_LEN];
+    uint8_t reset_after_response = 0U;
 
     proto_st = NFC_Proto_ParseTextHex((const uint8_t *)text, &cmd);
     if (proto_st != NFC_PROTO_OK)
@@ -771,6 +773,27 @@ static void NFC_ST_ProcessCommandText(const char *text)
                 }
                 break;
 
+            case NFC_CMD_OTA_ENTER:
+            {
+                NFC_CmdOtaEnter_t p;
+                (void)NFC_Proto_GetOtaEnter(&cmd, &p);
+
+                if (p.unlock_token != OTA_UNLOCK_TOKEN)
+                {
+                    NFC_Proto_BuildError(&rsp, 0x40U);
+                }
+                else if (OTA_RequestBootloader() == HAL_OK)
+                {
+                    NFC_Proto_BuildAck(&rsp);
+                    reset_after_response = 1U;
+                }
+                else
+                {
+                    NFC_Proto_BuildError(&rsp, 0x41U);
+                }
+                break;
+            }
+
             default:
                 NFC_Proto_BuildError(&rsp, 0x03U);
                 break;
@@ -781,5 +804,11 @@ static void NFC_ST_ProcessCommandText(const char *text)
     if (NFC_Proto_EncodeResponseTextHex(&rsp, rsp_text, sizeof(rsp_text)) == NFC_PROTO_OK)
     {
         (void)NFC_ST_WriteText((const char *)rsp_text);
+    }
+
+    if (reset_after_response)
+    {
+        HAL_Delay(50U);
+        NVIC_SystemReset();
     }
 }

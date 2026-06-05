@@ -29,6 +29,7 @@ static uint8_t expected_payload_len(uint8_t cmd, uint8_t *known)
     case NFC_CMD_READ_SCHED_STATUS:   return 0U;
     case NFC_CMD_STOP_ACTIVE_LED:     return 1U;
     case NFC_CMD_CLEAR_ALL_SESSIONS:  return 0U;
+    case NFC_CMD_OTA_ENTER:           return 4U;
     default:
         *known = 0U;
         return 0U;
@@ -221,6 +222,19 @@ NFC_ProtoStatus_t NFC_Proto_GetSetLedSession(const NFC_CommandFrame_t *frame,
     out->duration_value = (uint16_t)(((uint16_t)frame->payload[10] << 8) | frame->payload[11]);
     out->duration_unit  = frame->payload[12];
 
+    return NFC_PROTO_OK;
+}
+
+NFC_ProtoStatus_t NFC_Proto_GetOtaEnter(const NFC_CommandFrame_t *frame,
+                                        NFC_CmdOtaEnter_t *out)
+{
+    if ((frame == NULL) || (out == NULL)) return NFC_PROTO_ERR_NULL;
+    if ((frame->cmd != NFC_CMD_OTA_ENTER) || (frame->payload_len != 4U)) return NFC_PROTO_ERR_LENGTH;
+
+    out->unlock_token = ((uint32_t)frame->payload[0] << 24) |
+                        ((uint32_t)frame->payload[1] << 16) |
+                        ((uint32_t)frame->payload[2] << 8) |
+                        ((uint32_t)frame->payload[3]);
     return NFC_PROTO_OK;
 }
 

@@ -45,8 +45,14 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 12K
-  /* Last 2 KB flash page is reserved for StimScheduler persistence. */
-  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 62K
+  /*
+   * OTA layout:
+   *   0x08000000-0x08002FFF bootloader
+   *   0x08003000-0x0800EFFF application
+   *   0x0800F000-0x0800F7FF OTA metadata
+   *   0x0800F800-0x0800FFFF StimScheduler persistence
+   */
+  FLASH    (rx)    : ORIGIN = 0x8003000,   LENGTH = 48K
 }
 
 /* Sections */
@@ -176,6 +182,8 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >RAM
+
+  ASSERT((ORIGIN(RAM) + LENGTH(RAM) - .) >= 0x1000, "RAM margin below 4 KB after heap/stack reservation")
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :

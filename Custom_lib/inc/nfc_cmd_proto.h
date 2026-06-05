@@ -40,7 +40,9 @@ typedef enum
     NFC_CMD_CLEAR_SESSION       = 0x31,
     NFC_CMD_READ_SCHED_STATUS   = 0x32,
     NFC_CMD_STOP_ACTIVE_LED     = 0x33,
-    NFC_CMD_CLEAR_ALL_SESSIONS  = 0x34
+    NFC_CMD_CLEAR_ALL_SESSIONS  = 0x34,
+
+    NFC_CMD_OTA_ENTER           = 0x40
 } NFC_CommandCode_t;
 
 typedef enum
@@ -120,6 +122,11 @@ typedef struct
     uint8_t duration_unit;
 } NFC_CmdSetLedSession_t;
 
+typedef struct
+{
+    uint32_t unlock_token;
+} NFC_CmdOtaEnter_t;
+
 /* Main API */
 NFC_ProtoStatus_t NFC_Proto_ParseTextHex(const uint8_t *text,
                                          NFC_CommandFrame_t *frame);
@@ -148,6 +155,9 @@ NFC_ProtoStatus_t NFC_Proto_GetSetTime(const NFC_CommandFrame_t *frame,
 
 NFC_ProtoStatus_t NFC_Proto_GetSetLedSession(const NFC_CommandFrame_t *frame,
                                              NFC_CmdSetLedSession_t *out);
+
+NFC_ProtoStatus_t NFC_Proto_GetOtaEnter(const NFC_CommandFrame_t *frame,
+                                        NFC_CmdOtaEnter_t *out);
 
 /* Quick response builders */
 void NFC_Proto_BuildAck(NFC_ResponseFrame_t *rsp);
